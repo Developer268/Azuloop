@@ -1,0 +1,78 @@
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
+// Pin definitions
+#define DS18B20_PIN 4      // Temperature sensor data pin
+#define POT_PIN A1      // Potentiometer analog pin
+#define WATER_LEVEL_PIN 2  // Float switch (LOW when full)
+#define VALVE1_PIN 8       // Normally closed valve 1 (mixer)
+#define VALVE2_PIN 9       // Normally closed valve 2 (tank)
+
+OneWire oneWire(DS18B20_PIN);
+DallasTemperature sensors(&oneWire);
+
+void setup() {
+  Serial.begin(9600);
+  
+  // Initialize pins
+  pinMode(VALVE1_PIN, OUTPUT);
+  pinMode(VALVE2_PIN, OUTPUT);
+  pinMode(WATER_LEVEL_PIN, INPUT_PULLUP);
+  
+  // Start with both valves closed
+  digitalWrite(VALVE1_PIN, HIGH);
+  digitalWrite(VALVE2_PIN, LOW);
+
+  // Initialize temperature sensor
+  sensors.begin(); 
+}
+
+void loop() {
+  int potValue = analogRead(POT_PIN);
+  bool tankFull = digitalRead(WATER_LEVEL_PIN) == LOW;
+  
+  sensors.requestTemperatures();
+  float currentTemp = sensors.getTempCByIndex(0);
+
+  // Device control logic
+  if(potValue <= 4) { // Device OFF
+    digitalWrite(VALVE1_PIN, HIGH);
+    digitalWrite(VALVE2_PIN, LOW);
+    Serial.println("Device: OFF");
+  }
+  else { // Device ON
+    float setpoint = map(potValue, 5, 1023, 15, 35);
+
+    // Tank full override
+    if(tankFull) {
+      digitalWrite(VALVE1_PIN, HIGH);
+      digitalWrite(VALVE2_PIN, LOW);
+      Serial.print("Setpoint: ");
+      Serial.print(setpoint, 1);
+      Serial.print("C | Current: ");
+      Serial.print(currentTemp, 1);
+      Serial.println("C | Flow: Normal (Tank Full)");
+    }
+    else {
+      if(currentTemp >= setpoint) {
+        digitalWrite(VALVE1_PIN, LOW);
+        digitalWrite(VALVE2_PIN, HIGH);
+        Serial.print("Setpoint: ");
+        Serial.print(setpoint, 1);
+        Serial.print("C | Current: ");
+        Serial.print(currentTemp, 1);
+        Serial.println("C | Flow: Redirecting");
+      }
+      else {
+        digitalWrite(VALVE1_PIN, HIGH);
+        digitalWrite(VALVE2_PIN, LOW);
+        Serial.print("Setpoint: ");
+        Serial.print(setpoint, 1);
+        Serial.print("C | Current: ");
+        Serial.print(currentTemp, 1);
+        Serial.println("C | Flow: Normal");
+      }
+    }
+  }
+  delay(1000); // Update every second
+}
