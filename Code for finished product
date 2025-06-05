@@ -1,0 +1,81 @@
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
+#define DS18B20_PIN 4
+#define POT_PIN A0
+#define WATER_LEVEL_FULL_PIN 2
+#define WATER_LEVEL_MIN_PIN 3
+#define USER_NO_VALVE 8
+#define TANK_NC_VALVE 9
+#define TOILET_PRESSURE_NC_VALVE 10
+#define TOILET_NORMAL_NO_VALVE 11
+
+OneWire oneWire(DS18B20_PIN);
+DallasTemperature sensors(&oneWire);
+
+void setup() {
+  pinMode(USER_NO_VALVE, OUTPUT);
+  pinMode(TANK_NC_VALVE, OUTPUT);
+  pinMode(TOILET_PRESSURE_NC_VALVE, OUTPUT);
+  pinMode(TOILET_NORMAL_NO_VALVE, OUTPUT);
+  pinMode(WATER_LEVEL_FULL_PIN, INPUT_PULLUP);
+  pinMode(WATER_LEVEL_MIN_PIN, INPUT_PULLUP);
+  
+  digitalWrite(USER_NO_VALVE, LOW);
+  digitalWrite(TANK_NC_VALVE, LOW);
+  digitalWrite(TOILET_PRESSURE_NC_VALVE, LOW);
+  digitalWrite(TOILET_NORMAL_NO_VALVE, LOW);
+
+  sensors.begin();
+}
+
+void loop() {
+  int potValue = analogRead(POT_PIN);
+  bool tankFull = digitalRead(WATER_LEVEL_FULL_PIN) == LOW;
+  bool tankMinLevel = digitalRead(WATER_LEVEL_MIN_PIN) == LOW;
+  
+  sensors.requestTemperatures();
+  float currentTemp = sensors.getTempCByIndex(0);
+
+  if(potValue <= 4) {
+    setDeviceOff();
+  }
+  else {
+    float setpoint = map(potValue, 5, 1023, 15, 35);
+    controlSystem(currentTemp, setpoint, tankFull, tankMinLevel);
+  }
+  
+  delay(1000);
+}
+
+void setDeviceOff() {
+  digitalWrite(USER_NO_VALVE, LOW);
+  digitalWrite(TANK_NC_VALVE, LOW);
+  digitalWrite(TOILET_PRESSURE_NC_VALVE, LOW);
+  digitalWrite(TOILET_NORMAL_NO_VALVE, LOW);
+}
+
+void controlSystem(float currentTemp, float setpoint, bool tankFull, bool tankMinLevel) {
+  if(tankMinLevel) {
+    digitalWrite(TOILET_PRESSURE_NC_VALVE, HIGH);
+    digitalWrite(TOILET_NORMAL_NO_VALVE, HIGH);
+  } else {
+    digitalWrite(TOILET_PRESSURE_NC_VALVE, LOW);
+    digitalWrite(TOILET_NORMAL_NO_VALVE, LOW);
+  }
+  
+  if(tankFull) {
+    digitalWrite(USER_NO_VALVE, LOW);
+    digitalWrite(TANK_NC_VALVE, LOW);
+  }
+  else {
+    if(currentTemp >= setpoint) {
+      digitalWrite(USER_NO_VALVE, HIGH);
+      digitalWrite(TANK_NC_VALVE, HIGH);
+    }
+    else {
+      digitalWrite(USER_NO_VALVE, LOW);
+      digitalWrite(TANK_NC_VALVE, LOW);
+    }
+  }
+}
