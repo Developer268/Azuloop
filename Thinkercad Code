@@ -1,0 +1,76 @@
+// Pin definitions
+const int NC_LED = 8;      // Mixer valves (on if redirect, off if normal flow)
+const int NO_LED = 9;      // Tank valves (On if water level(A4) is above 300)
+const int tempPin = A5;    // Temperature sensor
+const int tempPotPin = A0; // Potentiometer for temperature setpoint
+const int waterLevelPin = A4; // Potentiometer for water level
+
+void setup() {
+  Serial.begin(9600);
+  Serial.println("System Booting");
+  
+  // Set pin modes
+  pinMode(NC_LED, OUTPUT);
+  pinMode(NO_LED, OUTPUT);
+  
+  // Initialize valves (both off)
+  digitalWrite(NC_LED, LOW);
+  digitalWrite(NO_LED, LOW);
+
+  delay(1000);
+  Serial.println("System Ready");
+}
+
+void loop() {
+  // Read temperature setpoint potentiometer
+  int tempPotValue = analogRead(tempPotPin);
+  
+  // Calculate setpoint and system state
+  float setpoint = 15.0;
+  bool systemActive = false;
+  
+  if(tempPotValue > 100) {  // Dead zone for off position
+    systemActive = true;
+    // Map 101-1023 to 15-35°C
+    setpoint = map(tempPotValue, 101, 1023, 150, 350) / 10.0;
+  }
+
+  // Always read water level (even when system is inactive)
+  int waterLevelValue = analogRead(waterLevelPin);
+  bool waterLevelHigh = waterLevelValue > 300;
+
+  if(systemActive) {
+    // Read temperature
+    int sensorValue = analogRead(tempPin);
+    float voltage = sensorValue * (5.0 / 1023.0);
+    float tempC = (voltage - 0.5) * 100.0;  // LM50 conversion
+    
+    // Temperature control logic
+    if(tempC < setpoint) {
+      digitalWrite(NC_LED, HIGH);  // Redirect water (Mixer valve)
+    } else {
+      digitalWrite(NC_LED, LOW);   // Normal flow
+    }
+
+    // Water level control logic
+    digitalWrite(NO_LED, waterLevelHigh ? HIGH : LOW);  // Tank valve
+
+    // Update Serial Monitor
+    Serial.print("Set: ");
+    Serial.print(setpoint, 1);
+    Serial.print("°C | Actual: ");
+    Serial.print(tempC, 1);
+    Serial.print("°C | Water: ");
+    Serial.print(waterLevelHigh ? "High" : "Low ");
+    Serial.print(" | State: ");
+    Serial.println(tempC < setpoint ? "Redirecting" : "Normal Flow");
+    
+  } else {  // System off
+    digitalWrite(NC_LED, LOW);
+    digitalWrite(NO_LED, LOW);
+    
+    Serial.println("System OFF - Both valves closed");
+  }
+
+  delay(200);
+}
