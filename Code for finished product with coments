@@ -1,0 +1,94 @@
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
+// Pin definitions
+#define DS18B20_PIN 4           // Temperature sensor data pin
+#define POT_PIN A0              // Potentiometer analog pin
+#define WATER_LEVEL_FULL_PIN 2  // Upper float switch (LOW when tank full)
+#define WATER_LEVEL_MIN_PIN 3   // Lower float switch (LOW when min level reached)
+
+#define USER_NO_VALVE 8         // Normally Open user valve (LOW = open to user)
+#define TANK_NC_VALVE 9         // Normally Closed tank valve (HIGH = open)
+#define TOILET_PRESSURE_NC_VALVE 10  // Normally Closed pressure valve (HIGH = open when enough pressure)
+#define TOILET_NORMAL_NO_VALVE 11    // Normally Open toilet valve (LOW = open for normal toilet tank flow)
+
+OneWire oneWire(DS18B20_PIN);
+DallasTemperature sensors(&oneWire);
+
+void setup() {
+  // Initialize valve pins
+  pinMode(USER_NO_VALVE, OUTPUT);
+  pinMode(TANK_NC_VALVE, OUTPUT);
+  pinMode(TOILET_PRESSURE_NC_VALVE, OUTPUT);
+  pinMode(TOILET_NORMAL_NO_VALVE, OUTPUT);
+  
+  // Initialize sensor pins
+  pinMode(WATER_LEVEL_FULL_PIN, INPUT_PULLUP);
+  pinMode(WATER_LEVEL_MIN_PIN, INPUT_PULLUP);
+  
+  // Set initial valve states (safe default)
+  digitalWrite(USER_NO_VALVE, LOW);           // Open (water flows to user)
+  digitalWrite(TANK_NC_VALVE, LOW);           // Closed
+  digitalWrite(TOILET_PRESSURE_NC_VALVE, LOW); // Closed
+  digitalWrite(TOILET_NORMAL_NO_VALVE, LOW);   // Open (normal toilet tank flow)
+
+  // Initialize temperature sensor
+  sensors.begin();
+}
+
+void loop() {
+  int potValue = analogRead(POT_PIN);
+  bool tankFull = digitalRead(WATER_LEVEL_FULL_PIN) == LOW;
+  bool tankMinLevel = digitalRead(WATER_LEVEL_MIN_PIN) == LOW;
+  
+  sensors.requestTemperatures();
+  float currentTemp = sensors.getTempCByIndex(0);
+
+  // Device control logic
+  if(potValue <= 4) { // Device OFF
+    setDeviceOff();
+  }
+  else { // Device ON
+    float setpoint = map(potValue, 5, 1023, 15, 35);
+    controlSystem(currentTemp, setpoint, tankFull, tankMinLevel);
+  }
+  
+  delay(1000);
+}
+
+void setDeviceOff() {
+  digitalWrite(USER_NO_VALVE, LOW);           // Open (water flows to user)
+  digitalWrite(TANK_NC_VALVE, LOW);           // Closed
+  digitalWrite(TOILET_PRESSURE_NC_VALVE, LOW); // Closed
+  digitalWrite(TOILET_NORMAL_NO_VALVE, LOW);   // Open (normal toilet flow)
+}
+
+void controlSystem(float currentTemp, float setpoint, bool tankFull, bool tankMinLevel) {
+  // Priority 1: Handle toilet water supply with pressure
+  if(tankMinLevel) {
+    digitalWrite(TOILET_PRESSURE_NC_VALVE, HIGH); // Open pressure valve (sufficient water for pressure)
+    digitalWrite(TOILET_NORMAL_NO_VALVE, HIGH);   // Close normal toilet flow (use tank pressure)
+  } else {
+    digitalWrite(TOILET_PRESSURE_NC_VALVE, LOW);  // Close pressure valve (insufficient water)
+    digitalWrite(TOILET_NORMAL_NO_VALVE, LOW);    // Open normal toilet flow (use regular toilet tank)
+  }
+  
+  // Priority 2: Tank full override
+  if(tankFull) {
+    digitalWrite(USER_NO_VALVE, LOW);        // Open user valve (normal flow to user)
+    digitalWrite(TANK_NC_VALVE, LOW);        // Close tank valve
+  }
+  // Priority 3: Temperature-based control
+  else {
+    if(currentTemp >= setpoint) {
+      // Redirect to tank
+      digitalWrite(USER_NO_VALVE, HIGH);     // Close user valve
+      digitalWrite(TANK_NC_VALVE, HIGH);     // Open tank valve
+    }
+    else {
+      // Normal flow to user
+      digitalWrite(USER_NO_VALVE, LOW);      // Open user valve
+      digitalWrite(TANK_NC_VALVE, LOW);      // Close tank valve
+    }
+  }
+}
